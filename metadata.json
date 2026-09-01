@@ -1,0 +1,6 @@
+{
+  "name": "Feliz Cumpleaños Jesica",
+  "description": "Una tarjeta interactiva de cumpleaños para Jesica.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

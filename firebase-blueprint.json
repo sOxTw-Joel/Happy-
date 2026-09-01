@@ -1,0 +1,12 @@
+{
+  "collections": [
+    {
+      "name": "backgrounds",
+      "description": "Background images stored as base64 strings.",
+      "fields": [
+        { "name": "base64Data", "type": "string" },
+        { "name": "name", "type": "string" }
+      ]
+    }
+  ]
+}
