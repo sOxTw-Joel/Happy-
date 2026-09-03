@@ -1,11 +1,31 @@
 {
   "collections": [
     {
+      "name": "config",
+      "description": "General configuration for the app (e.g. title, name).",
+      "fields": [
+        { "name": "title", "type": "string" },
+        { "name": "name", "type": "string" },
+        { "name": "envelopeEnabled", "type": "boolean" },
+        { "name": "envelopeText", "type": "string" },
+        { "name": "envelopePhoto", "type": "string" },
+        { "name": "polaroidEnabled", "type": "boolean" }
+      ]
+    },
+    {
       "name": "backgrounds",
       "description": "Background images stored as base64 strings.",
       "fields": [
         { "name": "base64Data", "type": "string" },
-        { "name": "name", "type": "string" }
+        { "name": "order", "type": "number" }
+      ]
+    },
+    {
+      "name": "polaroids",
+      "description": "Polaroid photos.",
+      "fields": [
+        { "name": "base64Data", "type": "string" },
+        { "name": "order", "type": "number" }
       ]
     }
   ]
