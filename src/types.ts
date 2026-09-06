@@ -10,6 +10,7 @@ export interface AppConfig {
   guestAccessEnabled?: boolean;
   guestAccessUsed?: boolean;
   guestSessionId?: string;
+  cardLocked?: boolean;
 }
 
 export interface DBItem {

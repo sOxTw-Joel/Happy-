@@ -7,6 +7,7 @@ import { compressImage } from './utils';
 import { AppConfig, DBItem, AdminRole } from './types';
 import { AdminLogin } from './components/AdminLogin';
 import { AdminView } from './components/AdminView';
+import { CardLockGate } from './components/CardLockGate';
 
 const DEFAULT_CONFIG: AppConfig = {
   title: "¡FELIZ CUMPLE!",
@@ -20,6 +21,7 @@ const DEFAULT_CONFIG: AppConfig = {
   guestAccessEnabled: true,
   guestAccessUsed: false,
   guestSessionId: "",
+  cardLocked: false,
 };
 
 const MESSAGES = [
@@ -78,6 +80,7 @@ export default function App() {
   });
 
   const [revocationNotice, setRevocationNotice] = useState<string | null>(null);
+  const [isCardUnlockedForSession, setIsCardUnlockedForSession] = useState(false);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -85,6 +88,7 @@ export default function App() {
       const hash = window.location.hash;
       if (path.startsWith('/admin') || hash === '#admin') {
         setCurrentPath('/admin');
+        setIsCardUnlockedForSession(false);
       } else {
         setCurrentPath('/');
       }
@@ -105,6 +109,9 @@ export default function App() {
         if (window.location.hash) {
           window.location.hash = '';
         }
+      }
+      if (path === '/admin') {
+        setIsCardUnlockedForSession(false);
       }
       setCurrentPath(path);
     }
@@ -222,6 +229,7 @@ export default function App() {
           order: backgrounds.length + i,
         });
       }
+      await handleSaveConfig({ cardLocked: true });
     }
   };
 
@@ -236,6 +244,7 @@ export default function App() {
           order: polaroids.length + i,
         });
       }
+      await handleSaveConfig({ cardLocked: true });
     }
   };
 
@@ -243,21 +252,24 @@ export default function App() {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       const base64 = await compressImage(file, 800);
-      handleSaveConfig({ envelopePhoto: base64 });
+      handleSaveConfig({ envelopePhoto: base64, cardLocked: true });
     }
   };
 
   const deleteItem = async (col: string, id: string) => {
     await deleteDoc(doc(db, col, id));
+    await handleSaveConfig({ cardLocked: true });
   };
 
   const handleUpdatePolaroidText = async (id: string, text: string) => {
     await setDoc(doc(db, 'polaroids', id), { text }, { merge: true });
+    await handleSaveConfig({ cardLocked: true });
   };
 
   const handleLogin = (role: 'master' | 'guest', enteredPassword?: string) => {
     setAuthRole(role);
     sessionStorage.setItem('admin_role', role);
+    setIsCardUnlockedForSession(false);
     if (role === 'guest') {
       const pass = enteredPassword || '';
       const sessId = config.guestSessionId || '';
@@ -286,6 +298,7 @@ export default function App() {
       guestAccessEnabled: false,
       guestAccessUsed: true,
       guestSessionId: newSessionToken,
+      cardLocked: false,
     });
     setAuthRole(null);
     setGuestAuthPass('');
@@ -333,6 +346,17 @@ export default function App() {
         onLogout={handleLogout}
         onViewCard={() => navigate('/')}
         onGuestFinish={handleGuestFinish}
+      />
+    );
+  }
+
+  // If card has unsaved changes / is locked, prompt for password before viewing
+  if (config.cardLocked && !isCardUnlockedForSession) {
+    return (
+      <CardLockGate
+        config={config}
+        onUnlock={() => setIsCardUnlockedForSession(true)}
+        onGoToAdmin={() => navigate('/admin')}
       />
     );
   }

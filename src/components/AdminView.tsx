@@ -54,6 +54,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [showGuestPass, setShowGuestPass] = useState(false);
   const [passSavedFeedback, setPassSavedFeedback] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [isSavingAll, setIsSavingAll] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   // Synchronize input if config changes remotely
@@ -69,6 +70,28 @@ export const AdminView: React.FC<AdminViewProps> = ({
       onLogout();
     }
   }, [authRole, config.guestAccessEnabled, onLogout]);
+
+  // Whenever a field is typed or changed in AdminView, cardLocked is set to true
+  const handleConfigChange = async (updates: Partial<AppConfig>) => {
+    await handleSaveConfig({ ...updates, cardLocked: true });
+  };
+
+  // Explicitly save all changes and unlock the card
+  const handleSaveAllChanges = async () => {
+    setIsSavingAll(true);
+    await handleSaveConfig({ cardLocked: false });
+    setIsSavingAll(false);
+    setSaveStatus('¡Cambios guardados con éxito! La tarjeta ya se visualiza directamente sin contraseña.');
+    setTimeout(() => setSaveStatus(null), 4000);
+  };
+
+  // When clicking "Ver Tarjeta": if changes were not saved (cardLocked is not false), lock card
+  const handleViewCardClick = async () => {
+    if (config.cardLocked !== false) {
+      await handleSaveConfig({ cardLocked: true });
+    }
+    onViewCard();
+  };
 
   const handleSaveGuestPassword = async () => {
     const trimmed = guestPassInput.trim();
@@ -114,7 +137,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
       <div className="max-w-4xl mx-auto bg-white p-5 sm:p-8 md:p-10 rounded-3xl shadow-xl border-4 border-pink-100">
         
         {/* Top Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 border-b-2 border-pink-50 pb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b-2 border-pink-50 pb-6">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-pink-100 flex items-center justify-center text-pink-600 shadow-inner">
               <Star size={24} className="fill-pink-500 text-pink-600" />
@@ -137,11 +160,26 @@ export const AdminView: React.FC<AdminViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Guardar Cambios Button */}
+            <button
+              onClick={handleSaveAllChanges}
+              disabled={isSavingAll}
+              className={`font-bold text-xs sm:text-sm px-4 py-2.5 rounded-full transition-all flex items-center gap-2 cursor-pointer shadow-md ${
+                config.cardLocked 
+                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-200' 
+                  : 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
+              }`}
+              title="Guardar todos los cambios y quitar la protección con contraseña"
+            >
+              <Save size={16} />
+              <span>{isSavingAll ? 'Guardando...' : 'Guardar Cambios'}</span>
+            </button>
+
             {authRole === 'guest' && (
               <button
                 onClick={handleFinishGuest}
                 disabled={isFinishing}
-                className="bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-full shadow-md shadow-emerald-200 transition-all flex items-center gap-2 cursor-pointer"
+                className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-full shadow-md shadow-emerald-200 transition-all flex items-center gap-2 cursor-pointer"
               >
                 <Save size={16} />
                 <span>{isFinishing ? 'Guardando...' : 'Guardar y Finalizar'}</span>
@@ -149,7 +187,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
             )}
 
             <button 
-              onClick={onViewCard} 
+              onClick={handleViewCardClick} 
               className="text-pink-600 hover:text-pink-700 font-bold text-xs sm:text-sm bg-pink-100 hover:bg-pink-200 px-4 py-2.5 rounded-full transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <ArrowLeft size={15} />
@@ -165,6 +203,48 @@ export const AdminView: React.FC<AdminViewProps> = ({
               <span className="hidden sm:inline">Salir</span>
             </button>
           </div>
+        </div>
+
+        {/* Card Lock Status Indicator Banner */}
+        <div className={`mb-6 p-3.5 rounded-2xl border text-xs sm:text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+          config.cardLocked
+            ? 'bg-amber-50 border-amber-200 text-amber-900'
+            : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+        }`}>
+          <div className="flex items-center gap-2.5">
+            {config.cardLocked ? (
+              <span className="p-1.5 bg-amber-200/70 text-amber-800 rounded-lg shrink-0">
+                <Lock size={16} />
+              </span>
+            ) : (
+              <span className="p-1.5 bg-emerald-200/70 text-emerald-800 rounded-lg shrink-0">
+                <Unlock size={16} />
+              </span>
+            )}
+            <div>
+              <p className="font-bold">
+                {config.cardLocked
+                  ? 'Tarjeta protegida con contraseña'
+                  : 'Tarjeta visible directamente sin contraseña'}
+              </p>
+              <p className="text-xs opacity-85">
+                {config.cardLocked
+                  ? 'Hay cambios en edición o sin guardar. Al volver a la tarjeta o quitar "/admin" se pedirá la contraseña para visualizarla.'
+                  : 'Todos los cambios están guardados. La tarjeta está lista y se puede visualizar libremente sin pedir clave.'}
+              </p>
+            </div>
+          </div>
+
+          {config.cardLocked && (
+            <button
+              onClick={handleSaveAllChanges}
+              disabled={isSavingAll}
+              className="self-start sm:self-auto bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer shadow-sm"
+            >
+              <Save size={14} />
+              <span>Guardar y Quitar Clave</span>
+            </button>
+          )}
         </div>
 
         {/* Feedback alert if any */}
@@ -289,7 +369,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
               <input 
                 type="text" 
                 value={config.title} 
-                onChange={(e) => handleSaveConfig({ title: e.target.value })} 
+                onChange={(e) => handleConfigChange({ title: e.target.value })} 
                 className="w-full p-3 border-2 border-pink-200 rounded-xl focus:outline-none focus:border-pink-400 font-medium text-pink-700 bg-white" 
               />
             </div>
@@ -298,7 +378,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
               <input 
                 type="text" 
                 value={config.name} 
-                onChange={(e) => handleSaveConfig({ name: e.target.value })} 
+                onChange={(e) => handleConfigChange({ name: e.target.value })} 
                 className="w-full p-3 border-2 border-pink-200 rounded-xl focus:outline-none focus:border-pink-400 font-medium text-pink-700 bg-white" 
               />
             </div>
@@ -307,7 +387,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
               <textarea 
                 rows={3}
                 value={config.dedication || ''} 
-                onChange={(e) => handleSaveConfig({ dedication: e.target.value })} 
+                onChange={(e) => handleConfigChange({ dedication: e.target.value })} 
                 placeholder="Escribe aquí unas palabras bonitas de dedicatoria..."
                 className="w-full p-3 border-2 border-pink-200 rounded-xl focus:outline-none focus:border-pink-400 font-medium text-pink-700 bg-white" 
               />
@@ -350,7 +430,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
               <input 
                 type="checkbox" 
                 checked={config.envelopeEnabled} 
-                onChange={(e) => handleSaveConfig({ envelopeEnabled: e.target.checked })} 
+                onChange={(e) => handleConfigChange({ envelopeEnabled: e.target.checked })} 
                 className="w-4 h-4 accent-pink-500" 
               />
               Activar
@@ -363,7 +443,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 <textarea 
                   rows={4} 
                   value={config.envelopeText} 
-                  onChange={(e) => handleSaveConfig({ envelopeText: e.target.value })} 
+                  onChange={(e) => handleConfigChange({ envelopeText: e.target.value })} 
                   className="w-full p-3 border-2 border-pink-200 rounded-xl focus:outline-none focus:border-pink-400 font-medium text-pink-700 bg-white" 
                 />
               </div>
@@ -397,7 +477,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 <input 
                   type="checkbox" 
                   checked={config.polaroidEnabled} 
-                  onChange={(e) => handleSaveConfig({ polaroidEnabled: e.target.checked })} 
+                  onChange={(e) => handleConfigChange({ polaroidEnabled: e.target.checked })} 
                   className="w-4 h-4 accent-pink-500" 
                 />
                 Activar
@@ -438,22 +518,33 @@ export const AdminView: React.FC<AdminViewProps> = ({
           )}
         </section>
 
-        {/* Bottom Guest Finish Button for convenience */}
-        {authRole === 'guest' && (
-          <div className="mt-8 pt-6 border-t-2 border-pink-100 flex flex-col items-center gap-3">
+        {/* Bottom Save Bar for convenient access */}
+        <div className="mt-8 pt-6 border-t-2 border-pink-100 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            onClick={handleSaveAllChanges}
+            disabled={isSavingAll}
+            className="w-full sm:w-auto px-6 py-3.5 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-bold text-sm sm:text-base rounded-2xl shadow-lg shadow-emerald-200 transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Save size={18} />
+            <span>{isSavingAll ? 'Guardando...' : 'Guardar Cambios (Quitar Clave)'}</span>
+          </button>
+
+          {authRole === 'guest' && (
             <button
               onClick={handleFinishGuest}
               disabled={isFinishing}
-              className="w-full sm:w-auto px-8 py-3.5 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-bold text-base rounded-2xl shadow-lg shadow-emerald-200 transition-all flex items-center justify-center gap-2.5 cursor-pointer"
+              className="w-full sm:w-auto px-6 py-3.5 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-bold text-sm sm:text-base rounded-2xl shadow-lg shadow-purple-200 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <Save size={18} />
-              <span>{isFinishing ? 'Guardando cambios...' : 'Guardar Cambios y Finalizar Edición'}</span>
+              <span>{isFinishing ? 'Guardando...' : 'Guardar y Finalizar Edición'}</span>
             </button>
-            <p className="text-xs text-pink-400 text-center">
-              Al hacer clic, tus cambios quedarán guardados y se cerrará el acceso.
-            </p>
-          </div>
-        )}
+          )}
+        </div>
+        <p className="text-xs text-pink-400 text-center mt-2">
+          {authRole === 'guest'
+            ? 'Usa "Guardar Cambios" para guardar y desbloquear la tarjeta sin perder tu sesión de invitado, o "Guardar y Finalizar" cuando hayas terminado todo.'
+            : 'Al pulsar "Guardar Cambios", la tarjeta se desbloqueará y no pedirá contraseña al visualizarla.'}
+        </p>
 
       </div>
     </div>
