@@ -19,6 +19,7 @@ const DEFAULT_CONFIG: AppConfig = {
   guestPassword: "",
   guestAccessEnabled: true,
   guestAccessUsed: false,
+  guestSessionId: "",
 };
 
 const MESSAGES = [
@@ -95,7 +96,16 @@ export default function App() {
 
   const navigate = (path: string) => {
     if (typeof window !== 'undefined') {
-      window.history.pushState({}, '', path);
+      try {
+        window.history.pushState({}, '', path);
+      } catch {
+        // Fallback for restricted iframe environments
+      }
+      if (path === '/') {
+        if (window.location.hash) {
+          window.location.hash = '';
+        }
+      }
       setCurrentPath(path);
     }
   };
@@ -103,7 +113,8 @@ export default function App() {
   useEffect(() => {
     const unsubConfig = onSnapshot(doc(db, 'config', 'general'), (docSnap) => {
       if (docSnap.exists()) {
-        setConfig(docSnap.data() as AppConfig);
+        const data = docSnap.data() as AppConfig;
+        setConfig((prev) => ({ ...prev, ...data }));
       }
     });
 
@@ -132,10 +143,12 @@ export default function App() {
   useEffect(() => {
     if (authRole === 'guest' && !loading) {
       const isAccessDisabled = config.guestAccessEnabled === false;
-      const currentConfigPass = config.guestPassword?.trim();
+      const currentConfigPass = config.guestPassword?.trim() || '';
+      // If password was changed or missing:
       const isPasswordChanged = Boolean(currentConfigPass && guestAuthPass && guestAuthPass !== currentConfigPass);
-      const isSessionInvalidated = Boolean(config.guestSessionId && guestAuthSessionId && config.guestSessionId !== guestAuthSessionId);
       const isPasswordMissing = !currentConfigPass;
+      // If master created/changed session token and guest has an old or mismatching session:
+      const isSessionInvalidated = Boolean(config.guestSessionId && config.guestSessionId !== guestAuthSessionId);
 
       if (isAccessDisabled || isPasswordChanged || isSessionInvalidated || isPasswordMissing) {
         // Immediately kick out the guest and clear their credentials
@@ -156,6 +169,8 @@ export default function App() {
         }
 
         setRevocationNotice(reason);
+        // Immediately close the admin panel and navigate back to the main card
+        navigate('/');
       }
     }
   }, [
@@ -180,9 +195,20 @@ export default function App() {
   };
 
   const handleSaveConfig = async (newConfig: Partial<AppConfig>) => {
-    const updated = { ...config, ...newConfig };
-    setConfig(updated);
-    await setDoc(doc(db, 'config', 'general'), updated);
+    // Sanitize updates: never pass undefined to Firestore setDoc
+    const cleanUpdates: Record<string, any> = {};
+    for (const [k, v] of Object.entries(newConfig)) {
+      if (v !== undefined) {
+        cleanUpdates[k] = v;
+      }
+    }
+
+    setConfig((prev) => ({ ...prev, ...cleanUpdates }));
+    try {
+      await setDoc(doc(db, 'config', 'general'), cleanUpdates, { merge: true });
+    } catch (err) {
+      console.error('Error saving config to Firestore:', err);
+    }
   };
 
   const handleUploadBg = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -251,6 +277,7 @@ export default function App() {
     sessionStorage.removeItem('guest_auth_pass');
     sessionStorage.removeItem('guest_auth_session_id');
     setRevocationNotice(null);
+    navigate('/');
   };
 
   const handleGuestFinish = async () => {
@@ -267,6 +294,7 @@ export default function App() {
     sessionStorage.removeItem('guest_auth_pass');
     sessionStorage.removeItem('guest_auth_session_id');
     setRevocationNotice('¡Tus cambios han sido guardados con éxito! Tu acceso temporal ha finalizado.');
+    navigate('/');
   };
 
   if (loading) {
@@ -314,6 +342,19 @@ export default function App() {
 
   return (
     <div className={`relative w-full ${showExtraSections ? 'min-h-screen h-auto pb-16' : 'h-screen overflow-hidden'} bg-pink-50 font-quicksand`}>
+      {/* Revocation Notice Floating Banner */}
+      {revocationNotice && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-md bg-amber-500 text-white font-semibold text-xs sm:text-sm px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-3 border-2 border-amber-300">
+          <span>⚠️ {revocationNotice}</span>
+          <button 
+            onClick={() => setRevocationNotice(null)}
+            className="text-white hover:text-amber-100 font-black text-base px-1.5 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Main Experience Hero Section */}
       <div className={`relative ${showExtraSections ? 'min-h-[70vh] sm:min-h-[75vh] py-8' : 'h-screen min-h-[500px]'} w-full flex flex-col items-center justify-center overflow-hidden transition-all duration-700`}>
         {/* Background Blobs */}
@@ -356,7 +397,7 @@ export default function App() {
               >
                 <Heart size={180} className="text-pink-600 fill-pink-500 stroke-1 drop-shadow-lg group-hover:scale-110 transition-transform duration-300" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-white font-black text-xl pointer-events-none drop-shadow-md">CLICK</span>
+                  <span className="text-white font-black text-xl uppercase tracking-wide pointer-events-none drop-shadow-md">TÓCAME</span>
                 </div>
               </motion.button>
 

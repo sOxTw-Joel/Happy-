@@ -63,6 +63,13 @@ export const AdminView: React.FC<AdminViewProps> = ({
     }
   }, [config.guestPassword]);
 
+  // Immediate security closure: If a guest has AdminView open and access is disabled, eject immediately
+  useEffect(() => {
+    if (authRole === 'guest' && config.guestAccessEnabled === false) {
+      onLogout();
+    }
+  }, [authRole, config.guestAccessEnabled, onLogout]);
+
   const handleSaveGuestPassword = async () => {
     const trimmed = guestPassInput.trim();
     const newSessionToken = Date.now().toString();
@@ -85,7 +92,7 @@ export const AdminView: React.FC<AdminViewProps> = ({
     await handleSaveConfig({ 
       guestAccessEnabled: enable,
       guestSessionId: newSessionToken,
-      guestAccessUsed: enable ? false : config.guestAccessUsed
+      guestAccessUsed: enable ? false : (config.guestAccessUsed ?? false)
     });
     setSaveStatus(
       enable 
