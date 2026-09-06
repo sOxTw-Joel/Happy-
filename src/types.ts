@@ -1,6 +1,7 @@
 export interface AppConfig {
   title: string;
   name: string;
+  dedication?: string;
   envelopeEnabled: boolean;
   envelopeText: string;
   envelopePhoto: string;
@@ -8,6 +9,7 @@ export interface AppConfig {
   guestPassword?: string;
   guestAccessEnabled?: boolean;
   guestAccessUsed?: boolean;
+  guestSessionId?: string;
 }
 
 export interface DBItem {

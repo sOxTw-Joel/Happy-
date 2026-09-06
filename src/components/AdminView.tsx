@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Star, 
   Trash2, 
@@ -56,24 +56,43 @@ export const AdminView: React.FC<AdminViewProps> = ({
   const [isFinishing, setIsFinishing] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
+  // Synchronize input if config changes remotely
+  useEffect(() => {
+    if (config.guestPassword !== undefined) {
+      setGuestPassInput(config.guestPassword);
+    }
+  }, [config.guestPassword]);
+
   const handleSaveGuestPassword = async () => {
     const trimmed = guestPassInput.trim();
+    const newSessionToken = Date.now().toString();
     await handleSaveConfig({ 
       guestPassword: trimmed,
+      guestSessionId: newSessionToken,
       // If setting a password and access was never enabled, we can activate it
       guestAccessEnabled: config.guestAccessEnabled ?? true 
     });
     setPassSavedFeedback(true);
-    setTimeout(() => setPassSavedFeedback(false), 2500);
+    setSaveStatus('Contraseña de invitado guardada. Se cerrará automáticamente la sesión a quien tenga el panel abierto con la clave anterior.');
+    setTimeout(() => {
+      setPassSavedFeedback(false);
+      setSaveStatus(null);
+    }, 3500);
   };
 
   const handleToggleGuestAccess = async (enable: boolean) => {
+    const newSessionToken = Date.now().toString();
     await handleSaveConfig({ 
       guestAccessEnabled: enable,
+      guestSessionId: newSessionToken,
       guestAccessUsed: enable ? false : config.guestAccessUsed
     });
-    setSaveStatus(enable ? 'Acceso de invitado habilitado' : 'Acceso de invitado deshabilitado');
-    setTimeout(() => setSaveStatus(null), 2500);
+    setSaveStatus(
+      enable 
+        ? 'Acceso de invitado reactivado con éxito.' 
+        : 'Acceso de invitado bloqueado: el panel se cerrará inmediatamente para cualquier invitado que lo tenga abierto.'
+    );
+    setTimeout(() => setSaveStatus(null), 3500);
   };
 
   const handleFinishGuest = async () => {
@@ -273,6 +292,16 @@ export const AdminView: React.FC<AdminViewProps> = ({
                 type="text" 
                 value={config.name} 
                 onChange={(e) => handleSaveConfig({ name: e.target.value })} 
+                className="w-full p-3 border-2 border-pink-200 rounded-xl focus:outline-none focus:border-pink-400 font-medium text-pink-700 bg-white" 
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-bold text-pink-500 mb-2">Dedicatoria (justo debajo del título/nombre)</label>
+              <textarea 
+                rows={3}
+                value={config.dedication || ''} 
+                onChange={(e) => handleSaveConfig({ dedication: e.target.value })} 
+                placeholder="Escribe aquí unas palabras bonitas de dedicatoria..."
                 className="w-full p-3 border-2 border-pink-200 rounded-xl focus:outline-none focus:border-pink-400 font-medium text-pink-700 bg-white" 
               />
             </div>

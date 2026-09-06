@@ -6,13 +6,15 @@
       "fields": [
         { "name": "title", "type": "string" },
         { "name": "name", "type": "string" },
+        { "name": "dedication", "type": "string" },
         { "name": "envelopeEnabled", "type": "boolean" },
         { "name": "envelopeText", "type": "string" },
         { "name": "envelopePhoto", "type": "string" },
         { "name": "polaroidEnabled", "type": "boolean" },
         { "name": "guestPassword", "type": "string" },
         { "name": "guestAccessEnabled", "type": "boolean" },
-        { "name": "guestAccessUsed", "type": "boolean" }
+        { "name": "guestAccessUsed", "type": "boolean" },
+        { "name": "guestSessionId", "type": "string" }
       ]
     },
     {

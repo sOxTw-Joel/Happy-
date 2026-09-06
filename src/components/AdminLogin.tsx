@@ -4,13 +4,19 @@ import { AppConfig, AdminRole } from '../types';
 
 interface AdminLoginProps {
   config: AppConfig;
-  onLogin: (role: 'master' | 'guest') => void;
+  onLogin: (role: 'master' | 'guest', enteredPassword?: string) => void;
   onBackToCard: () => void;
+  revocationMessage?: string | null;
 }
 
 const MASTER_PASSWORD = "Ebooster.14";
 
-export const AdminLogin: React.FC<AdminLoginProps> = ({ config, onLogin, onBackToCard }) => {
+export const AdminLogin: React.FC<AdminLoginProps> = ({ 
+  config, 
+  onLogin, 
+  onBackToCard,
+  revocationMessage
+}) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +44,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ config, onLogin, onBackT
         );
         return;
       }
-      onLogin('guest');
+      onLogin('guest', trimmed);
       return;
     }
 
@@ -69,6 +75,13 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ config, onLogin, onBackT
             Acceso seguro a la configuración de la tarjeta
           </p>
         </div>
+
+        {revocationMessage && (
+          <div className="mb-5 p-3.5 bg-amber-50 border-2 border-amber-300 rounded-2xl flex items-start gap-2.5 text-amber-900 text-xs sm:text-sm font-medium shadow-sm">
+            <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+            <div className="leading-snug">{revocationMessage}</div>
+          </div>
+        )}
 
         {error && (
           <div className="mb-5 p-3.5 bg-rose-50 border-2 border-rose-200 rounded-2xl flex items-start gap-2.5 text-rose-700 text-xs sm:text-sm font-medium">

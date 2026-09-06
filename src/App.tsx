@@ -11,6 +11,7 @@ import { AdminView } from './components/AdminView';
 const DEFAULT_CONFIG: AppConfig = {
   title: "¡FELIZ CUMPLE!",
   name: "Jesica",
+  dedication: "Que hoy y siempre la vida te sonría, que cumplas todos tus sueños y que este año esté lleno de momentos mágicos e inolvidables. ¡Te quiero mucho!",
   envelopeEnabled: false,
   envelopeText: "Un pequeño mensaje para ti...",
   envelopePhoto: "",
@@ -61,6 +62,22 @@ export default function App() {
     return null;
   });
 
+  const [guestAuthPass, setGuestAuthPass] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('guest_auth_pass') || '';
+    }
+    return '';
+  });
+
+  const [guestAuthSessionId, setGuestAuthSessionId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('guest_auth_session_id') || '';
+    }
+    return '';
+  });
+
+  const [revocationNotice, setRevocationNotice] = useState<string | null>(null);
+
   useEffect(() => {
     const handlePopState = () => {
       const path = window.location.pathname;
@@ -110,13 +127,46 @@ export default function App() {
     };
   }, []);
 
-  // If guest is logged in but admin revokes access, automatically log them out
+  // Real-time security enforcement for Guest users:
+  // If master revokes/blocks access, changes the password, or invalidates the session:
   useEffect(() => {
-    if (authRole === 'guest' && config.guestAccessEnabled === false) {
-      sessionStorage.removeItem('admin_role');
-      setAuthRole(null);
+    if (authRole === 'guest' && !loading) {
+      const isAccessDisabled = config.guestAccessEnabled === false;
+      const currentConfigPass = config.guestPassword?.trim();
+      const isPasswordChanged = Boolean(currentConfigPass && guestAuthPass && guestAuthPass !== currentConfigPass);
+      const isSessionInvalidated = Boolean(config.guestSessionId && guestAuthSessionId && config.guestSessionId !== guestAuthSessionId);
+      const isPasswordMissing = !currentConfigPass;
+
+      if (isAccessDisabled || isPasswordChanged || isSessionInvalidated || isPasswordMissing) {
+        // Immediately kick out the guest and clear their credentials
+        sessionStorage.removeItem('admin_role');
+        sessionStorage.removeItem('guest_auth_pass');
+        sessionStorage.removeItem('guest_auth_session_id');
+        setAuthRole(null);
+        setGuestAuthPass('');
+        setGuestAuthSessionId('');
+
+        let reason = 'Tu sesión de invitado ha sido cerrada.';
+        if (isAccessDisabled) {
+          reason = 'El administrador maestro ha bloqueado el acceso al panel para invitados.';
+        } else if (isPasswordChanged) {
+          reason = 'El administrador maestro ha modificado la contraseña de acceso.';
+        } else if (isSessionInvalidated) {
+          reason = 'Tu sesión fue revocada por el administrador maestro.';
+        }
+
+        setRevocationNotice(reason);
+      }
     }
-  }, [authRole, config.guestAccessEnabled]);
+  }, [
+    authRole, 
+    loading, 
+    config.guestAccessEnabled, 
+    config.guestPassword, 
+    config.guestSessionId, 
+    guestAuthPass, 
+    guestAuthSessionId
+  ]);
 
   const handleClick = () => {
     if (clicks < 5) {
@@ -179,25 +229,44 @@ export default function App() {
     await setDoc(doc(db, 'polaroids', id), { text }, { merge: true });
   };
 
-  const handleLogin = (role: 'master' | 'guest') => {
+  const handleLogin = (role: 'master' | 'guest', enteredPassword?: string) => {
     setAuthRole(role);
     sessionStorage.setItem('admin_role', role);
+    if (role === 'guest') {
+      const pass = enteredPassword || '';
+      const sessId = config.guestSessionId || '';
+      sessionStorage.setItem('guest_auth_pass', pass);
+      sessionStorage.setItem('guest_auth_session_id', sessId);
+      setGuestAuthPass(pass);
+      setGuestAuthSessionId(sessId);
+    }
+    setRevocationNotice(null);
   };
 
   const handleLogout = () => {
     setAuthRole(null);
+    setGuestAuthPass('');
+    setGuestAuthSessionId('');
     sessionStorage.removeItem('admin_role');
+    sessionStorage.removeItem('guest_auth_pass');
+    sessionStorage.removeItem('guest_auth_session_id');
+    setRevocationNotice(null);
   };
 
   const handleGuestFinish = async () => {
+    const newSessionToken = Date.now().toString();
     await handleSaveConfig({
       guestAccessEnabled: false,
       guestAccessUsed: true,
+      guestSessionId: newSessionToken,
     });
     setAuthRole(null);
+    setGuestAuthPass('');
+    setGuestAuthSessionId('');
     sessionStorage.removeItem('admin_role');
-    alert('¡Tus cambios han sido guardados con éxito! Tu acceso temporal ha finalizado.');
-    navigate('/');
+    sessionStorage.removeItem('guest_auth_pass');
+    sessionStorage.removeItem('guest_auth_session_id');
+    setRevocationNotice('¡Tus cambios han sido guardados con éxito! Tu acceso temporal ha finalizado.');
   };
 
   if (loading) {
@@ -216,6 +285,7 @@ export default function App() {
           config={config}
           onLogin={handleLogin}
           onBackToCard={() => navigate('/')}
+          revocationMessage={revocationNotice}
         />
       );
     }
@@ -243,9 +313,9 @@ export default function App() {
   const showExtraSections = clicks >= 5;
 
   return (
-    <div className={`relative w-full ${showExtraSections ? 'min-h-screen h-auto pb-24' : 'h-screen overflow-hidden'} bg-pink-50 font-quicksand`}>
-      {/* Main Experience Hero Section - Star button has been moved to /admin only */}
-      <div className="relative h-screen min-h-[600px] w-full flex flex-col items-center justify-center overflow-hidden">
+    <div className={`relative w-full ${showExtraSections ? 'min-h-screen h-auto pb-16' : 'h-screen overflow-hidden'} bg-pink-50 font-quicksand`}>
+      {/* Main Experience Hero Section */}
+      <div className={`relative ${showExtraSections ? 'min-h-[70vh] sm:min-h-[75vh] py-8' : 'h-screen min-h-[500px]'} w-full flex flex-col items-center justify-center overflow-hidden transition-all duration-700`}>
         {/* Background Blobs */}
         <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
           <div className="absolute top-10 left-10 w-24 h-24 bg-yellow-300 rounded-full mix-blend-multiply filter blur-xl opacity-70"></div>
@@ -270,7 +340,7 @@ export default function App() {
           })}
         </div>
 
-        <div className="relative z-20 flex flex-col items-center text-center px-10 w-full max-w-2xl">
+        <div className="relative z-20 flex flex-col items-center text-center px-6 w-full max-w-2xl">
           {clicks < 5 ? (
             <motion.div 
               className="flex flex-col items-center w-full"
@@ -282,9 +352,9 @@ export default function App() {
                 onClick={handleClick}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
-                className="group relative focus:outline-none transition-transform cursor-pointer mb-12"
+                className="group relative focus:outline-none transition-transform cursor-pointer mb-10"
               >
-                <Heart size={192} className="text-pink-600 fill-pink-500 stroke-1 drop-shadow-lg group-hover:scale-110 transition-transform duration-300" />
+                <Heart size={180} className="text-pink-600 fill-pink-500 stroke-1 drop-shadow-lg group-hover:scale-110 transition-transform duration-300" />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <span className="text-white font-black text-xl pointer-events-none drop-shadow-md">CLICK</span>
                 </div>
@@ -320,7 +390,7 @@ export default function App() {
             </motion.div>
           ) : (
             <motion.div 
-              className="flex flex-col items-center"
+              className="flex flex-col items-center w-full"
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', damping: 12, stiffness: 100 }}
@@ -329,34 +399,46 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.5 }}
-                className="font-caveat text-6xl sm:text-7xl font-bold text-pink-600 mb-2 drop-shadow-sm tracking-tight"
+                className="font-caveat text-5xl sm:text-7xl font-bold text-pink-600 mb-2 drop-shadow-sm tracking-tight"
               >
                 {config.title}
               </motion.h1>
               <motion.h2 
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.8 }}
-                className="font-caveat text-7xl sm:text-8xl font-bold text-pink-500 mb-8 drop-shadow-md tracking-wide break-all sm:break-normal"
+                transition={{ delay: 0.7 }}
+                className="font-caveat text-6xl sm:text-8xl font-bold text-pink-500 mb-3 drop-shadow-md tracking-wide break-all sm:break-normal"
               >
                 {config.name}
               </motion.h2>
+
+              {/* Dedicatoria justo debajo del título y nombre */}
+              {config.dedication && (
+                <motion.p
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.9 }}
+                  className="font-caveat text-2xl sm:text-3xl text-pink-700 font-bold max-w-xl mx-auto leading-relaxed mb-6 px-4"
+                >
+                  {config.dedication}
+                </motion.p>
+              )}
 
               {(config.envelopeEnabled || (config.polaroidEnabled && polaroids.length > 0)) && (
                 <motion.div 
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ delay: 1.2, duration: 1 }}
-                  className="flex flex-col items-center text-pink-400 animate-bounce cursor-pointer mt-4"
+                  transition={{ delay: 1.1, duration: 0.8 }}
+                  className="flex flex-col items-center text-pink-400 animate-bounce cursor-pointer mt-2"
                   onClick={() => {
-                    window.scrollTo({
-                      top: window.innerHeight,
-                      behavior: 'smooth'
-                    });
+                    const extraSec = document.getElementById('extra-sections');
+                    if (extraSec) {
+                      extraSec.scrollIntoView({ behavior: 'smooth' });
+                    }
                   }}
                 >
-                  <span className="text-sm font-semibold tracking-wider uppercase mb-1">Desliza hacia abajo</span>
-                  <ChevronDown size={24} />
+                  <span className="text-xs sm:text-sm font-semibold tracking-wider uppercase mb-1">Desliza hacia abajo</span>
+                  <ChevronDown size={22} />
                 </motion.div>
               )}
             </motion.div>
@@ -364,24 +446,28 @@ export default function App() {
         </div>
       </div>
 
-      {/* Extra Interactive Sections */}
+      {/* Extra Interactive Sections with tight viewport-aware spacing */}
       {showExtraSections && (
-        <div className="flex flex-col items-center w-full">
+        <div id="extra-sections" className="flex flex-col items-center w-full space-y-12 sm:space-y-16 pb-12">
           {config.envelopeEnabled && (
-            <div className="min-h-screen flex flex-col items-center justify-center w-full py-20 px-4">
+            <section className="w-full flex flex-col items-center justify-center px-4 pt-2">
+              <div className="text-center mb-3">
+                <h3 className="font-caveat text-4xl sm:text-5xl font-bold text-pink-500 mb-1 drop-shadow-sm">Una Carta Para Ti</h3>
+                <p className="text-pink-400 text-xs sm:text-sm font-medium">Toca el sobre para descubrir su interior</p>
+              </div>
               <Envelope config={config} />
-            </div>
+            </section>
           )}
 
           {config.polaroidEnabled && polaroids.length > 0 && (
-            <div className="min-h-screen flex flex-col items-center justify-center w-full py-20 px-4 overflow-hidden">
-              <h3 className="font-caveat text-5xl font-bold text-pink-500 mb-16 drop-shadow-sm text-center">Nuestros Recuerdos</h3>
-              <div className="flex flex-wrap justify-center max-w-4xl gap-8">
+            <section className="w-full flex flex-col items-center justify-center px-4 pt-2 overflow-hidden">
+              <h3 className="font-caveat text-4xl sm:text-5xl font-bold text-pink-500 mb-6 drop-shadow-sm text-center">Nuestros Recuerdos</h3>
+              <div className="flex flex-wrap justify-center max-w-4xl gap-6 sm:gap-8">
                 {polaroids.map((pol, i) => (
                   <PolaroidCard key={pol.id} item={pol} index={i} />
                 ))}
               </div>
-            </div>
+            </section>
           )}
         </div>
       )}
@@ -391,41 +477,47 @@ export default function App() {
 
 function Envelope({ config }: { config: AppConfig }) {
   const [isOpen, setIsOpen] = useState(false);
-  const envelopeRef = useRef(null);
-  const isInView = useInView(envelopeRef, { once: true, margin: "-100px" });
 
   return (
-    <div ref={envelopeRef} className="flex flex-col items-center justify-center select-none">
+    <div className="flex flex-col items-center justify-center select-none w-full">
       <div 
         onClick={() => setIsOpen(!isOpen)}
-        className="relative w-[320px] h-[220px] sm:w-[380px] sm:h-[260px] cursor-pointer group flex items-center justify-center perspective-1000 mt-12"
+        className="relative w-[320px] h-[220px] sm:w-[380px] sm:h-[250px] cursor-pointer group flex items-center justify-center perspective-1000 mt-28 mb-4"
       >
         {/* ENVELOPE BACK */}
-        <div className="absolute inset-0 bg-pink-700 rounded-b-xl rounded-t-sm shadow-2xl z-0" />
+        <div className="absolute inset-0 bg-pink-700 rounded-b-xl rounded-t-sm shadow-xl z-0" />
 
-        {/* LETTER (INSIDE/OUTSIDE) */}
+        {/* LETTER (INSIDE/OUTSIDE) - Fully hidden when closed, rises when open */}
         <motion.div
-          animate={isOpen ? { y: -160, zIndex: 40 } : { y: 0, zIndex: 10 }}
-          transition={{ duration: 0.8, type: 'spring', bounce: 0.2 }}
-          className="absolute bottom-4 w-[90%] h-[420px] bg-white rounded-xl shadow-2xl flex flex-col items-center p-6 border border-pink-100"
+          animate={isOpen ? { y: -160, opacity: 1, scale: 1 } : { y: 40, opacity: 0, scale: 0.85 }}
+          transition={{ 
+            y: { duration: 0.6, delay: isOpen ? 0.25 : 0 },
+            opacity: { duration: 0.35, delay: isOpen ? 0.2 : 0.05 },
+            scale: { duration: 0.5 }
+          }}
+          className={`absolute bottom-4 w-[90%] h-[380px] sm:h-[400px] bg-white rounded-xl shadow-2xl flex flex-col items-center p-5 border border-pink-100 ${isOpen ? 'z-40 pointer-events-auto' : 'z-10 pointer-events-none'}`}
         >
           {config.envelopePhoto ? (
-            <div className="w-full h-52 bg-pink-50/50 rounded-md overflow-hidden mb-4 border border-pink-100 flex-shrink-0 shadow-inner flex items-center justify-center p-2">
-              <img src={config.envelopePhoto} className="max-w-full max-h-full object-contain drop-shadow-sm" alt="Sorpresa" />
+            <div className="w-full h-48 sm:h-52 bg-pink-50/50 rounded-lg overflow-hidden mb-3 border border-pink-100 flex-shrink-0 shadow-inner flex items-center justify-center p-2">
+              <img 
+                src={config.envelopePhoto} 
+                className="max-w-full max-h-full object-contain rounded drop-shadow-sm" 
+                alt="Sorpresa" 
+              />
             </div>
           ) : (
-            <div className="w-full h-52 bg-pink-50 rounded-md mb-4 flex items-center justify-center text-pink-200 flex-shrink-0 shadow-inner">
+            <div className="w-full h-44 bg-pink-50 rounded-lg mb-3 flex items-center justify-center text-pink-200 flex-shrink-0 shadow-inner">
               <Heart size={40} />
             </div>
           )}
-          <p className="font-caveat text-pink-600 font-bold text-center text-2xl leading-relaxed overflow-y-auto w-full px-2 custom-scrollbar">
+          <p className="font-caveat text-pink-600 font-bold text-center text-xl sm:text-2xl leading-relaxed overflow-y-auto w-full px-2 custom-scrollbar flex-1 flex items-center justify-center">
             {config.envelopeText}
           </p>
         </motion.div>
 
         {/* ENVELOPE FRONT BOTTOM/SIDES */}
         <div 
-          className="absolute inset-0 z-20 pointer-events-none rounded-b-xl"
+          className="absolute inset-0 z-20 pointer-events-none rounded-b-xl shadow-md"
           style={{
             background: 'linear-gradient(to top, #ec4899 0%, #f472b6 100%)',
             clipPath: 'polygon(0% 100%, 100% 100%, 100% 35%, 50% 65%, 0% 35%)'
@@ -434,8 +526,8 @@ function Envelope({ config }: { config: AppConfig }) {
 
         {/* ENVELOPE FLAP (TOP) */}
         <motion.div
-          animate={isOpen ? { rotateX: 180, zIndex: 5 } : { rotateX: 0, zIndex: 25 }}
-          transition={{ duration: 0.6 }}
+          animate={isOpen ? { rotateX: 180, zIndex: 5 } : { rotateX: 0, zIndex: 35 }}
+          transition={{ duration: 0.5, delay: isOpen ? 0 : 0.25 }}
           style={{
             transformOrigin: 'top',
             clipPath: 'polygon(0% 0%, 100% 0%, 50% 65%)',
@@ -444,19 +536,19 @@ function Envelope({ config }: { config: AppConfig }) {
           className="absolute inset-0 pointer-events-none rounded-t-sm shadow-md"
         />
 
-        {/* SEAL */}
+        {/* SEAL (HEART) */}
         {!isOpen && (
           <motion.div 
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
-            className="absolute top-[42%] z-30 flex items-center justify-center w-12 h-12 bg-pink-100 rounded-full border-2 border-pink-300 shadow-md group-hover:scale-110 transition-transform"
+            className="absolute top-[42%] z-40 flex items-center justify-center w-12 h-12 bg-pink-100 rounded-full border-2 border-pink-300 shadow-md group-hover:scale-110 transition-transform"
           >
             <Heart size={20} className="text-pink-500 fill-pink-400" />
           </motion.div>
         )}
       </div>
 
-      <p className="mt-8 text-pink-500 font-semibold tracking-wide text-sm bg-pink-100/50 px-4 py-1.5 rounded-full">
+      <p className="mt-4 text-pink-500 font-semibold tracking-wide text-xs sm:text-sm bg-pink-100/60 px-4 py-1.5 rounded-full border border-pink-200/50 shadow-sm">
         {isOpen ? "Toca el sobre para cerrarlo" : "Toca el sobre para abrirlo"}
       </p>
     </div>
