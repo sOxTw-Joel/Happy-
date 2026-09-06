@@ -32,7 +32,7 @@ interface AdminViewProps {
   authRole: 'master' | 'guest';
   onLogout: () => void;
   onViewCard: () => void;
-  onGuestFinish: () => Promise<void>;
+  onSaveAndFinish: () => Promise<void>;
 }
 
 export const AdminView: React.FC<AdminViewProps> = ({
@@ -48,13 +48,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
   authRole,
   onLogout,
   onViewCard,
-  onGuestFinish,
+  onSaveAndFinish,
 }) => {
   const [guestPassInput, setGuestPassInput] = useState(config.guestPassword || '');
   const [showGuestPass, setShowGuestPass] = useState(false);
   const [passSavedFeedback, setPassSavedFeedback] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
-  const [isSavingAll, setIsSavingAll] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   // Synchronize input if config changes remotely
@@ -76,21 +75,16 @@ export const AdminView: React.FC<AdminViewProps> = ({
     await handleSaveConfig({ ...updates, cardLocked: true });
   };
 
-  // Explicitly save all changes and unlock the card
-  const handleSaveAllChanges = async () => {
-    setIsSavingAll(true);
-    await handleSaveConfig({ cardLocked: false });
-    setIsSavingAll(false);
-    setSaveStatus('¡Cambios guardados con éxito! La tarjeta ya se visualiza directamente sin contraseña.');
-    setTimeout(() => setSaveStatus(null), 4000);
-  };
+  // The ONLY save action: saves all changes, unlocks the card for everyone, and loses access to admin panel
+  const handleSaveAndFinish = async () => {
+    const msg = authRole === 'guest'
+      ? '¿Deseas guardar todos los cambios y finalizar? La tarjeta quedará desbloqueada para todo el público y se cerrará tu acceso al panel admin.'
+      : '¿Deseas guardar todos los cambios y finalizar? La tarjeta quedará desbloqueada para todo el público y se cerrará la sesión de administración.';
 
-  // When clicking "Ver Tarjeta": if changes were not saved (cardLocked is not false), lock card
-  const handleViewCardClick = async () => {
-    if (config.cardLocked !== false) {
-      await handleSaveConfig({ cardLocked: true });
+    if (window.confirm(msg)) {
+      setIsFinishing(true);
+      await onSaveAndFinish();
     }
-    onViewCard();
   };
 
   const handleSaveGuestPassword = async () => {
@@ -100,7 +94,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
       guestPassword: trimmed,
       guestSessionId: newSessionToken,
       // If setting a password and access was never enabled, we can activate it
-      guestAccessEnabled: config.guestAccessEnabled ?? true 
+      guestAccessEnabled: config.guestAccessEnabled ?? true,
+      cardLocked: true
     });
     setPassSavedFeedback(true);
     setSaveStatus('Contraseña de invitado guardada. Se cerrará automáticamente la sesión a quien tenga el panel abierto con la clave anterior.');
@@ -115,7 +110,8 @@ export const AdminView: React.FC<AdminViewProps> = ({
     await handleSaveConfig({ 
       guestAccessEnabled: enable,
       guestSessionId: newSessionToken,
-      guestAccessUsed: enable ? false : (config.guestAccessUsed ?? false)
+      guestAccessUsed: enable ? false : (config.guestAccessUsed ?? false),
+      cardLocked: true
     });
     setSaveStatus(
       enable 
@@ -123,13 +119,6 @@ export const AdminView: React.FC<AdminViewProps> = ({
         : 'Acceso de invitado bloqueado: el panel se cerrará inmediatamente para cualquier invitado que lo tenga abierto.'
     );
     setTimeout(() => setSaveStatus(null), 3500);
-  };
-
-  const handleFinishGuest = async () => {
-    if (window.confirm('¿Deseas guardar todos tus cambios y finalizar tu acceso? Ya no podrás volver a entrar hasta que el administrador reactive tu acceso.')) {
-      setIsFinishing(true);
-      await onGuestFinish();
-    }
   };
 
   return (
@@ -160,37 +149,23 @@ export const AdminView: React.FC<AdminViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Guardar Cambios Button */}
+            {/* Solo 1 botón para guardar los cambios */}
             <button
-              onClick={handleSaveAllChanges}
-              disabled={isSavingAll}
-              className={`font-bold text-xs sm:text-sm px-4 py-2.5 rounded-full transition-all flex items-center gap-2 cursor-pointer shadow-md ${
-                config.cardLocked 
-                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-200' 
-                  : 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
-              }`}
-              title="Guardar todos los cambios y quitar la protección con contraseña"
+              onClick={handleSaveAndFinish}
+              disabled={isFinishing}
+              className="bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-full shadow-md shadow-emerald-200 transition-all flex items-center gap-2 cursor-pointer"
+              title="Guardar todos los cambios, desbloquear la tarjeta y finalizar acceso"
             >
               <Save size={16} />
-              <span>{isSavingAll ? 'Guardando...' : 'Guardar Cambios'}</span>
+              <span>{isFinishing ? 'Guardando...' : 'Guardar y Finalizar'}</span>
             </button>
 
-            {authRole === 'guest' && (
-              <button
-                onClick={handleFinishGuest}
-                disabled={isFinishing}
-                className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-full shadow-md shadow-emerald-200 transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <Save size={16} />
-                <span>{isFinishing ? 'Guardando...' : 'Guardar y Finalizar'}</span>
-              </button>
-            )}
-
             <button 
-              onClick={handleViewCardClick} 
+              onClick={onViewCard} 
               className="text-pink-600 hover:text-pink-700 font-bold text-xs sm:text-sm bg-pink-100 hover:bg-pink-200 px-4 py-2.5 rounded-full transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Ver tarjeta (solicitará contraseña por estar en modo edición)"
             >
-              <ArrowLeft size={15} />
+              <Eye size={15} />
               <span>Ver Tarjeta</span>
             </button>
 
@@ -206,45 +181,18 @@ export const AdminView: React.FC<AdminViewProps> = ({
         </div>
 
         {/* Card Lock Status Indicator Banner */}
-        <div className={`mb-6 p-3.5 rounded-2xl border text-xs sm:text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-          config.cardLocked
-            ? 'bg-amber-50 border-amber-200 text-amber-900'
-            : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-        }`}>
-          <div className="flex items-center gap-2.5">
-            {config.cardLocked ? (
-              <span className="p-1.5 bg-amber-200/70 text-amber-800 rounded-lg shrink-0">
-                <Lock size={16} />
-              </span>
-            ) : (
-              <span className="p-1.5 bg-emerald-200/70 text-emerald-800 rounded-lg shrink-0">
-                <Unlock size={16} />
-              </span>
-            )}
-            <div>
-              <p className="font-bold">
-                {config.cardLocked
-                  ? 'Tarjeta protegida con contraseña'
-                  : 'Tarjeta visible directamente sin contraseña'}
-              </p>
-              <p className="text-xs opacity-85">
-                {config.cardLocked
-                  ? 'Hay cambios en edición o sin guardar. Al volver a la tarjeta o quitar "/admin" se pedirá la contraseña para visualizarla.'
-                  : 'Todos los cambios están guardados. La tarjeta está lista y se puede visualizar libremente sin pedir clave.'}
-              </p>
-            </div>
+        <div className="mb-6 p-3.5 rounded-2xl border bg-amber-50 border-amber-200 text-amber-900 text-xs sm:text-sm flex items-center gap-2.5">
+          <span className="p-1.5 bg-amber-200/70 text-amber-800 rounded-lg shrink-0">
+            <Lock size={16} />
+          </span>
+          <div>
+            <p className="font-bold">
+              Modo Edición Activo: Tarjeta protegida con contraseña
+            </p>
+            <p className="text-xs opacity-85">
+              Al abrir la web sin <strong>/admin</strong> o presionar <strong>"Ver Tarjeta"</strong> se solicitará la contraseña. Solo al presionar el botón <strong>"Guardar y Finalizar"</strong> se desbloqueará la tarjeta para todo el público y se cerrará el acceso al panel.
+            </p>
           </div>
-
-          {config.cardLocked && (
-            <button
-              onClick={handleSaveAllChanges}
-              disabled={isSavingAll}
-              className="self-start sm:self-auto bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-xl transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer shadow-sm"
-            >
-              <Save size={14} />
-              <span>Guardar y Quitar Clave</span>
-            </button>
-          )}
         </div>
 
         {/* Feedback alert if any */}
@@ -519,32 +467,10 @@ export const AdminView: React.FC<AdminViewProps> = ({
         </section>
 
         {/* Bottom Save Bar for convenient access */}
-        <div className="mt-8 pt-6 border-t-2 border-pink-100 flex flex-col sm:flex-row items-center justify-center gap-3">
-          <button
-            onClick={handleSaveAllChanges}
-            disabled={isSavingAll}
-            className="w-full sm:w-auto px-6 py-3.5 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-bold text-sm sm:text-base rounded-2xl shadow-lg shadow-emerald-200 transition-all flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Save size={18} />
-            <span>{isSavingAll ? 'Guardando...' : 'Guardar Cambios (Quitar Clave)'}</span>
-          </button>
-
-          {authRole === 'guest' && (
-            <button
-              onClick={handleFinishGuest}
-              disabled={isFinishing}
-              className="w-full sm:w-auto px-6 py-3.5 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-bold text-sm sm:text-base rounded-2xl shadow-lg shadow-purple-200 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Save size={18} />
-              <span>{isFinishing ? 'Guardando...' : 'Guardar y Finalizar Edición'}</span>
-            </button>
-          )}
+        {/* Bottom Helper Note */}
+        <div className="mt-8 pt-4 border-t-2 border-pink-50 text-center text-xs text-pink-400">
+          Para guardar definitivamente todos los cambios y desbloquear la tarjeta para el público, utiliza el botón <strong>Guardar y Finalizar</strong> en la barra superior.
         </div>
-        <p className="text-xs text-pink-400 text-center mt-2">
-          {authRole === 'guest'
-            ? 'Usa "Guardar Cambios" para guardar y desbloquear la tarjeta sin perder tu sesión de invitado, o "Guardar y Finalizar" cuando hayas terminado todo.'
-            : 'Al pulsar "Guardar Cambios", la tarjeta se desbloqueará y no pedirá contraseña al visualizarla.'}
-        </p>
 
       </div>
     </div>

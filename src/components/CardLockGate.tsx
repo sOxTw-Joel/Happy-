@@ -64,13 +64,13 @@ export const CardLockGate: React.FC<CardLockGateProps> = ({
         <div className="text-center mb-6">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-pink-100 text-pink-700 mb-2">
             <Sparkles size={13} />
-            <span>Tarjeta en Edición</span>
+            <span>Modo Edición</span>
           </div>
           <h2 className="text-2xl font-black text-pink-600 tracking-tight mb-2">
-            Tarjeta Protegida
+            Tarjeta en Modo Edición
           </h2>
           <p className="text-xs sm:text-sm text-pink-800/80 leading-relaxed font-medium">
-            Hay cambios en edición o sin guardar en el panel de administración. Para visualizar la tarjeta, ingresa la contraseña de acceso (la misma que usas para <strong>/admin</strong>):
+            La tarjeta se encuentra en modo edición. Para poder ver la tarjeta debe ingresar la contraseña:
           </p>
         </div>
 
@@ -85,7 +85,7 @@ export const CardLockGate: React.FC<CardLockGateProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-pink-700 mb-1.5 uppercase tracking-wider">
-              Contraseña de Acceso
+              Contraseña
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-pink-400">
@@ -114,7 +114,7 @@ export const CardLockGate: React.FC<CardLockGateProps> = ({
             className="w-full py-3.5 px-4 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 active:scale-98 text-white font-bold rounded-2xl shadow-lg shadow-pink-200 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm sm:text-base"
           >
             <Lock size={18} />
-            <span>Desbloquear y Ver Tarjeta</span>
+            <span>Ingresar y Ver Tarjeta</span>
           </button>
         </form>
 
@@ -125,7 +125,7 @@ export const CardLockGate: React.FC<CardLockGateProps> = ({
             className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-pink-600 hover:text-pink-800 transition-colors cursor-pointer"
           >
             <ArrowLeft size={14} />
-            <span>Ir al panel /admin para guardar cambios</span>
+            <span>Ir al panel /admin</span>
           </button>
         </div>
       </div>

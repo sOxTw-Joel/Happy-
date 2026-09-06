@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence, useInView } from 'motion/react';
-import { Heart, ChevronDown } from 'lucide-react';
+import { Heart, ChevronDown, Settings } from 'lucide-react';
 import { doc, setDoc, deleteDoc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { compressImage } from './utils';
@@ -190,6 +190,13 @@ export default function App() {
     guestAuthSessionId
   ]);
 
+  // Ensure cardLocked: true in Firestore whenever an admin is logged in at /admin
+  useEffect(() => {
+    if (authRole && currentPath === '/admin' && config.cardLocked !== true && !loading) {
+      handleSaveConfig({ cardLocked: true });
+    }
+  }, [authRole, currentPath, config.cardLocked, loading]);
+
   const handleClick = () => {
     if (clicks < 5) {
       setClicks((prev) => prev + 1);
@@ -266,7 +273,7 @@ export default function App() {
     await handleSaveConfig({ cardLocked: true });
   };
 
-  const handleLogin = (role: 'master' | 'guest', enteredPassword?: string) => {
+  const handleLogin = async (role: 'master' | 'guest', enteredPassword?: string) => {
     setAuthRole(role);
     sessionStorage.setItem('admin_role', role);
     setIsCardUnlockedForSession(false);
@@ -279,6 +286,8 @@ export default function App() {
       setGuestAuthSessionId(sessId);
     }
     setRevocationNotice(null);
+    // Persist cardLocked: true in Firestore so anywhere the web is opened, it shows in edition mode
+    await handleSaveConfig({ cardLocked: true });
   };
 
   const handleLogout = () => {
@@ -289,16 +298,20 @@ export default function App() {
     sessionStorage.removeItem('guest_auth_pass');
     sessionStorage.removeItem('guest_auth_session_id');
     setRevocationNotice(null);
+    setIsCardUnlockedForSession(false);
     navigate('/');
   };
 
-  const handleGuestFinish = async () => {
+  const handleSaveAndFinish = async () => {
+    const isGuest = authRole === 'guest';
     const newSessionToken = Date.now().toString();
     await handleSaveConfig({
-      guestAccessEnabled: false,
-      guestAccessUsed: true,
-      guestSessionId: newSessionToken,
       cardLocked: false,
+      ...(isGuest ? {
+        guestAccessEnabled: false,
+        guestAccessUsed: true,
+        guestSessionId: newSessionToken,
+      } : {}),
     });
     setAuthRole(null);
     setGuestAuthPass('');
@@ -306,7 +319,10 @@ export default function App() {
     sessionStorage.removeItem('admin_role');
     sessionStorage.removeItem('guest_auth_pass');
     sessionStorage.removeItem('guest_auth_session_id');
-    setRevocationNotice('¡Tus cambios han sido guardados con éxito! Tu acceso temporal ha finalizado.');
+    setIsCardUnlockedForSession(true);
+    if (isGuest) {
+      setRevocationNotice('¡Tus cambios han sido guardados y la tarjeta ha sido desbloqueada! Tu acceso temporal ha finalizado.');
+    }
     navigate('/');
   };
 
@@ -344,8 +360,11 @@ export default function App() {
         handleUpdatePolaroidText={handleUpdatePolaroidText}
         authRole={authRole}
         onLogout={handleLogout}
-        onViewCard={() => navigate('/')}
-        onGuestFinish={handleGuestFinish}
+        onViewCard={() => {
+          setIsCardUnlockedForSession(false);
+          navigate('/');
+        }}
+        onSaveAndFinish={handleSaveAndFinish}
       />
     );
   }
@@ -366,6 +385,20 @@ export default function App() {
 
   return (
     <div className={`relative w-full ${showExtraSections ? 'min-h-screen h-auto pb-16' : 'h-screen overflow-hidden'} bg-pink-50 font-quicksand`}>
+      {/* Return to Admin floating button if authenticated */}
+      {authRole && (
+        <button
+          onClick={() => {
+            setIsCardUnlockedForSession(false);
+            navigate('/admin');
+          }}
+          className="fixed top-4 right-4 z-50 bg-pink-600 hover:bg-pink-700 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-full shadow-xl flex items-center gap-2 cursor-pointer transition-all border-2 border-white/80"
+          title="Volver a editar en el panel /admin"
+        >
+          <Settings size={15} />
+          <span>Volver a /admin</span>
+        </button>
+      )}
       {/* Revocation Notice Floating Banner */}
       {revocationNotice && (
         <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-md bg-amber-500 text-white font-semibold text-xs sm:text-sm px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-3 border-2 border-amber-300">
