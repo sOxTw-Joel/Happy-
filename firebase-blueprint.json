@@ -2,14 +2,17 @@
   "collections": [
     {
       "name": "config",
-      "description": "General configuration for the app (e.g. title, name).",
+      "description": "General configuration for the app (e.g. title, name, guest auth settings).",
       "fields": [
         { "name": "title", "type": "string" },
         { "name": "name", "type": "string" },
         { "name": "envelopeEnabled", "type": "boolean" },
         { "name": "envelopeText", "type": "string" },
         { "name": "envelopePhoto", "type": "string" },
-        { "name": "polaroidEnabled", "type": "boolean" }
+        { "name": "polaroidEnabled", "type": "boolean" },
+        { "name": "guestPassword", "type": "string" },
+        { "name": "guestAccessEnabled", "type": "boolean" },
+        { "name": "guestAccessUsed", "type": "boolean" }
       ]
     },
     {

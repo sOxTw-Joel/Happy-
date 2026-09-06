@@ -1,19 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence, useInView } from 'motion/react';
-import { Heart, Star, Trash2, Upload, Plus, Save } from 'lucide-react';
-import { doc, setDoc, deleteDoc, collection, getDocs, onSnapshot } from 'firebase/firestore';
+import { Heart, ChevronDown } from 'lucide-react';
+import { doc, setDoc, deleteDoc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { compressImage } from './utils';
-
-// Types
-interface AppConfig {
-  title: string;
-  name: string;
-  envelopeEnabled: boolean;
-  envelopeText: string;
-  envelopePhoto: string;
-  polaroidEnabled: boolean;
-}
+import { AppConfig, DBItem, AdminRole } from './types';
+import { AdminLogin } from './components/AdminLogin';
+import { AdminView } from './components/AdminView';
 
 const DEFAULT_CONFIG: AppConfig = {
   title: "¡FELIZ CUMPLE!",
@@ -22,14 +15,10 @@ const DEFAULT_CONFIG: AppConfig = {
   envelopeText: "Un pequeño mensaje para ti...",
   envelopePhoto: "",
   polaroidEnabled: false,
+  guestPassword: "",
+  guestAccessEnabled: true,
+  guestAccessUsed: false,
 };
-
-interface DBItem {
-  id: string;
-  base64Data: string;
-  order: number;
-  text?: string;
-}
 
 const MESSAGES = [
   "¡Ya casi está listo!",
@@ -48,7 +37,51 @@ export default function App() {
   const [backgrounds, setBackgrounds] = useState<DBItem[]>([]);
   const [polaroids, setPolaroids] = useState<DBItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'main' | 'admin'>('main');
+
+  // Path routing: detect /admin or hash #admin
+  const [currentPath, setCurrentPath] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      if (path.startsWith('/admin') || hash === '#admin') {
+        return '/admin';
+      }
+    }
+    return '/';
+  });
+
+  // Admin authentication state
+  const [authRole, setAuthRole] = useState<AdminRole>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('admin_role');
+      if (saved === 'master' || saved === 'guest') {
+        return saved as AdminRole;
+      }
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      if (path.startsWith('/admin') || hash === '#admin') {
+        setCurrentPath('/admin');
+      } else {
+        setCurrentPath('/');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigate = (path: string) => {
+    if (typeof window !== 'undefined') {
+      window.history.pushState({}, '', path);
+      setCurrentPath(path);
+    }
+  };
 
   useEffect(() => {
     const unsubConfig = onSnapshot(doc(db, 'config', 'general'), (docSnap) => {
@@ -76,6 +109,14 @@ export default function App() {
       unsubPol();
     };
   }, []);
+
+  // If guest is logged in but admin revokes access, automatically log them out
+  useEffect(() => {
+    if (authRole === 'guest' && config.guestAccessEnabled === false) {
+      sessionStorage.removeItem('admin_role');
+      setAuthRole(null);
+    }
+  }, [authRole, config.guestAccessEnabled]);
 
   const handleClick = () => {
     if (clicks < 5) {
@@ -138,6 +179,26 @@ export default function App() {
     await setDoc(doc(db, 'polaroids', id), { text }, { merge: true });
   };
 
+  const handleLogin = (role: 'master' | 'guest') => {
+    setAuthRole(role);
+    sessionStorage.setItem('admin_role', role);
+  };
+
+  const handleLogout = () => {
+    setAuthRole(null);
+    sessionStorage.removeItem('admin_role');
+  };
+
+  const handleGuestFinish = async () => {
+    await handleSaveConfig({
+      guestAccessEnabled: false,
+      guestAccessUsed: true,
+    });
+    setAuthRole(null);
+    sessionStorage.removeItem('admin_role');
+    alert('¡Tus cambios han sido guardados con éxito! Tu acceso temporal ha finalizado.');
+    navigate('/');
+  };
 
   if (loading) {
     return (
@@ -147,8 +208,35 @@ export default function App() {
     );
   }
 
-  if (view === 'admin') {
-    return <AdminView config={config} backgrounds={backgrounds} polaroids={polaroids} handleSaveConfig={handleSaveConfig} handleUploadBg={handleUploadBg} handleUploadPolaroid={handleUploadPolaroid} handleUploadEnvelope={handleUploadEnvelope} deleteItem={deleteItem} handleUpdatePolaroidText={handleUpdatePolaroidText} onClose={() => setView('main')} />;
+  // Admin Route handling (/admin)
+  if (currentPath === '/admin') {
+    if (!authRole) {
+      return (
+        <AdminLogin
+          config={config}
+          onLogin={handleLogin}
+          onBackToCard={() => navigate('/')}
+        />
+      );
+    }
+
+    return (
+      <AdminView
+        config={config}
+        backgrounds={backgrounds}
+        polaroids={polaroids}
+        handleSaveConfig={handleSaveConfig}
+        handleUploadBg={handleUploadBg}
+        handleUploadPolaroid={handleUploadPolaroid}
+        handleUploadEnvelope={handleUploadEnvelope}
+        deleteItem={deleteItem}
+        handleUpdatePolaroidText={handleUpdatePolaroidText}
+        authRole={authRole}
+        onLogout={handleLogout}
+        onViewCard={() => navigate('/')}
+        onGuestFinish={handleGuestFinish}
+      />
+    );
   }
 
   const progress = (clicks / 5) * 100;
@@ -156,15 +244,7 @@ export default function App() {
 
   return (
     <div className={`relative w-full ${showExtraSections ? 'min-h-screen h-auto pb-24' : 'h-screen overflow-hidden'} bg-pink-50 font-quicksand`}>
-      
-      <button 
-        onClick={() => setView('admin')}
-        className="fixed bottom-4 left-4 z-50 p-4 opacity-5 hover:opacity-100 transition-opacity focus:outline-none"
-      >
-        <Star size={24} className="text-pink-600" />
-      </button>
-
-      {/* Main Experience Hero Section */}
+      {/* Main Experience Hero Section - Star button has been moved to /admin only */}
       <div className="relative h-screen min-h-[600px] w-full flex flex-col items-center justify-center overflow-hidden">
         {/* Background Blobs */}
         <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
@@ -210,30 +290,27 @@ export default function App() {
                 </div>
               </motion.button>
 
-              <div className="w-full max-w-md mb-8">
-                <div className="flex justify-between mb-2 px-2">
-                  <span className="text-pink-600 font-bold text-sm tracking-widest uppercase">Progreso de Regalo</span>
-                  <span className="text-pink-600 font-bold text-sm">{Math.round(progress)}%</span>
-                </div>
-                <div className="h-6 w-full bg-white border-4 border-pink-200 rounded-full overflow-hidden p-1 shadow-inner">
-                  <motion.div 
-                    className="h-full bg-pink-500 rounded-full shadow-sm"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progress}%` }}
-                    transition={{ duration: 0.4, ease: "easeOut" }}
-                  />
-                </div>
+              {/* Progress Bar Container */}
+              <div className="w-full max-w-md bg-white p-2 rounded-full shadow-inner border border-pink-200">
+                <motion.div 
+                  className="h-4 bg-gradient-to-r from-pink-400 to-pink-600 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progress}%` }}
+                  transition={{ ease: "easeOut", duration: 0.3 }}
+                />
               </div>
 
-              <div className="h-16">
+              {/* Message Display Area */}
+              <div className="h-10 mt-6 flex items-center justify-center">
                 <AnimatePresence mode="wait">
-                  {clicks > 0 && (
+                  {currentMessage && (
                     <motion.p
-                      key={clicks}
+                      key={currentMessage}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
-                      className="text-2xl font-bold text-pink-400 bg-white/80 px-6 py-2 rounded-full shadow-sm border-2 border-pink-100 inline-block"
+                      transition={{ duration: 0.2 }}
+                      className="text-pink-500 font-bold text-lg"
                     >
                       {currentMessage}
                     </motion.p>
@@ -242,11 +319,11 @@ export default function App() {
               </div>
             </motion.div>
           ) : (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8, y: 30 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ duration: 1, delay: 0.3, type: 'spring', bounce: 0.4 }}
-              className="flex flex-col items-center text-center px-4 sm:px-10 w-full"
+            <motion.div 
+              className="flex flex-col items-center"
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', damping: 12, stiffness: 100 }}
             >
               <motion.h1 
                 initial={{ opacity: 0, y: 10 }}
@@ -256,7 +333,6 @@ export default function App() {
               >
                 {config.title}
               </motion.h1>
-              
               <motion.h2 
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -265,30 +341,22 @@ export default function App() {
               >
                 {config.name}
               </motion.h2>
-              
-              <motion.div 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1.1 }}
-                className="bg-white/90 backdrop-blur-md p-6 sm:p-8 rounded-3xl border-4 border-pink-100 shadow-xl max-w-lg w-full"
-              >
-                <Heart size={48} fill="#ec4899" className="text-pink-500 mx-auto mb-4 drop-shadow-md" />
-                <p className="text-pink-600 text-lg sm:text-xl font-bold leading-relaxed">
-                  Que este día esté lleno de mucha alegría, amor y momentos inolvidables. 
-                  <br/><br/>
-                  ¡Te deseo lo mejor hoy y siempre!
-                </p>
-              </motion.div>
-              
-              {(config.envelopeEnabled || config.polaroidEnabled) && (
-                <motion.div
+
+              {(config.envelopeEnabled || (config.polaroidEnabled && polaroids.length > 0)) && (
+                <motion.div 
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  transition={{ delay: 2.5 }}
-                  className="absolute bottom-[-100px] text-pink-500 font-bold text-lg animate-bounce flex flex-col items-center gap-2"
+                  transition={{ delay: 1.2, duration: 1 }}
+                  className="flex flex-col items-center text-pink-400 animate-bounce cursor-pointer mt-4"
+                  onClick={() => {
+                    window.scrollTo({
+                      top: window.innerHeight,
+                      behavior: 'smooth'
+                    });
+                  }}
                 >
-                  Sigue bajando
-                  <span className="text-2xl">👇</span>
+                  <span className="text-sm font-semibold tracking-wider uppercase mb-1">Desliza hacia abajo</span>
+                  <ChevronDown size={24} />
                 </motion.div>
               )}
             </motion.div>
@@ -296,13 +364,12 @@ export default function App() {
         </div>
       </div>
 
-      {/* Extra Sections */}
+      {/* Extra Interactive Sections */}
       {showExtraSections && (
-        <div className="relative z-20 w-full flex flex-col items-center">
-          
+        <div className="flex flex-col items-center w-full">
           {config.envelopeEnabled && (
-            <div className="min-h-screen flex items-center justify-center w-full py-20 px-4 mt-20">
-              <EnvelopeReveal config={config} />
+            <div className="min-h-screen flex flex-col items-center justify-center w-full py-20 px-4">
+              <Envelope config={config} />
             </div>
           )}
 
@@ -316,80 +383,82 @@ export default function App() {
               </div>
             </div>
           )}
-          
         </div>
       )}
-
     </div>
   );
 }
 
-function EnvelopeReveal({ config }: { config: AppConfig }) {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: "-150px" });
+function Envelope({ config }: { config: AppConfig }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const envelopeRef = useRef(null);
+  const isInView = useInView(envelopeRef, { once: true, margin: "-100px" });
 
   return (
-    <div ref={ref} className="relative w-full max-w-md h-[450px] flex items-center justify-center mt-10" style={{ perspective: '1000px' }}>
-      {/* Back of envelope */}
-      <div className="absolute bottom-0 w-full h-[300px] bg-pink-300 rounded-lg shadow-xl" />
-      
-      {/* Top Flap (opens) */}
-      <motion.div
-        className="absolute top-[150px] w-full h-[150px] bg-pink-400 origin-top drop-shadow-md"
-        style={{ clipPath: 'polygon(0 0, 50% 100%, 100% 0)' }}
-        initial={{ rotateX: 0, zIndex: 30 }}
-        animate={isInView ? { 
-          rotateX: 180,
-          zIndex: [30, 5, 5]
-        } : {
-          rotateX: 0,
-          zIndex: 30
-        }}
-        transition={{ 
-          duration: 0.8, 
-          ease: "easeInOut",
-          zIndex: { delay: 0.4 }
-        }}
-      />
-
-      {/* Letter inside */}
-      <motion.div 
-        initial={{ y: 0, scale: 0.95, zIndex: 10 }}
-        animate={isInView ? { 
-          y: [0, -320, -120],
-          scale: [0.95, 1, 1.05],
-          zIndex: [10, 10, 40]
-        } : {
-          y: 0, scale: 0.95, zIndex: 10
-        }}
-        transition={{ 
-          duration: 1.8, 
-          delay: 0.5,
-          times: [0, 0.5, 1],
-          ease: "easeInOut"
-        }}
-        className="absolute bottom-4 w-[90%] h-[420px] bg-white rounded-xl shadow-2xl flex flex-col items-center p-6 border border-pink-100"
+    <div ref={envelopeRef} className="flex flex-col items-center justify-center select-none">
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        className="relative w-[320px] h-[220px] sm:w-[380px] sm:h-[260px] cursor-pointer group flex items-center justify-center perspective-1000 mt-12"
       >
-        {config.envelopePhoto ? (
-          <div className="w-full h-52 bg-pink-50/50 rounded-md overflow-hidden mb-4 border border-pink-100 flex-shrink-0 shadow-inner flex items-center justify-center p-2">
-            <img src={config.envelopePhoto} className="max-w-full max-h-full object-contain drop-shadow-sm" alt="Sorpresa" />
-          </div>
-        ) : (
-          <div className="w-full h-52 bg-pink-50 rounded-md mb-4 flex items-center justify-center text-pink-200 flex-shrink-0 shadow-inner">
-            <Heart size={40} />
-          </div>
-        )}
-        <p className="font-caveat text-pink-600 font-bold text-center text-2xl leading-relaxed overflow-y-auto w-full px-2 custom-scrollbar">
-          {config.envelopeText}
-        </p>
-      </motion.div>
+        {/* ENVELOPE BACK */}
+        <div className="absolute inset-0 bg-pink-700 rounded-b-xl rounded-t-sm shadow-2xl z-0" />
 
-      {/* Front flaps of envelope */}
-      <div className="absolute bottom-0 w-full h-[300px] pointer-events-none overflow-hidden rounded-lg z-20">
-        <div className="absolute top-0 left-0 w-1/2 h-full bg-pink-400 origin-bottom-left" style={{ clipPath: 'polygon(0 0, 100% 50%, 0 100%)' }} />
-        <div className="absolute top-0 right-0 w-1/2 h-full bg-pink-400 origin-bottom-right" style={{ clipPath: 'polygon(100% 0, 0 50%, 100% 100%)' }} />
-        <div className="absolute bottom-0 left-0 w-full h-1/2 bg-pink-500" style={{ clipPath: 'polygon(0 100%, 50% 0, 100% 100%)' }} />
+        {/* LETTER (INSIDE/OUTSIDE) */}
+        <motion.div
+          animate={isOpen ? { y: -160, zIndex: 40 } : { y: 0, zIndex: 10 }}
+          transition={{ duration: 0.8, type: 'spring', bounce: 0.2 }}
+          className="absolute bottom-4 w-[90%] h-[420px] bg-white rounded-xl shadow-2xl flex flex-col items-center p-6 border border-pink-100"
+        >
+          {config.envelopePhoto ? (
+            <div className="w-full h-52 bg-pink-50/50 rounded-md overflow-hidden mb-4 border border-pink-100 flex-shrink-0 shadow-inner flex items-center justify-center p-2">
+              <img src={config.envelopePhoto} className="max-w-full max-h-full object-contain drop-shadow-sm" alt="Sorpresa" />
+            </div>
+          ) : (
+            <div className="w-full h-52 bg-pink-50 rounded-md mb-4 flex items-center justify-center text-pink-200 flex-shrink-0 shadow-inner">
+              <Heart size={40} />
+            </div>
+          )}
+          <p className="font-caveat text-pink-600 font-bold text-center text-2xl leading-relaxed overflow-y-auto w-full px-2 custom-scrollbar">
+            {config.envelopeText}
+          </p>
+        </motion.div>
+
+        {/* ENVELOPE FRONT BOTTOM/SIDES */}
+        <div 
+          className="absolute inset-0 z-20 pointer-events-none rounded-b-xl"
+          style={{
+            background: 'linear-gradient(to top, #ec4899 0%, #f472b6 100%)',
+            clipPath: 'polygon(0% 100%, 100% 100%, 100% 35%, 50% 65%, 0% 35%)'
+          }}
+        />
+
+        {/* ENVELOPE FLAP (TOP) */}
+        <motion.div
+          animate={isOpen ? { rotateX: 180, zIndex: 5 } : { rotateX: 0, zIndex: 25 }}
+          transition={{ duration: 0.6 }}
+          style={{
+            transformOrigin: 'top',
+            clipPath: 'polygon(0% 0%, 100% 0%, 50% 65%)',
+            background: '#db2777'
+          }}
+          className="absolute inset-0 pointer-events-none rounded-t-sm shadow-md"
+        />
+
+        {/* SEAL */}
+        {!isOpen && (
+          <motion.div 
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            className="absolute top-[42%] z-30 flex items-center justify-center w-12 h-12 bg-pink-100 rounded-full border-2 border-pink-300 shadow-md group-hover:scale-110 transition-transform"
+          >
+            <Heart size={20} className="text-pink-500 fill-pink-400" />
+          </motion.div>
+        )}
       </div>
+
+      <p className="mt-8 text-pink-500 font-semibold tracking-wide text-sm bg-pink-100/50 px-4 py-1.5 rounded-full">
+        {isOpen ? "Toca el sobre para cerrarlo" : "Toca el sobre para abrirlo"}
+      </p>
     </div>
   );
 }
@@ -398,13 +467,13 @@ const PolaroidCard: React.FC<{ item: DBItem; index: number }> = ({ item, index }
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-50px" });
   
-  const rotation = useRef((Math.random() - 0.5) * 16).current;
-  const yOffset = useRef((Math.random() * 30)).current;
+  const rotation = index % 2 === 0 ? (index % 3 + 1) * 2 : -(index % 3 + 1) * 2;
+  const yOffset = (index % 2 === 0 ? 1 : -1) * 10;
 
   return (
     <motion.div
       ref={ref}
-      initial={{ opacity: 0, y: 100, rotate: 0 }}
+      initial={{ opacity: 0, y: 50, rotate: 0 }}
       animate={isInView ? { opacity: 1, y: yOffset, rotate: rotation } : {}}
       transition={{ duration: 0.8, delay: (index % 5) * 0.15, type: 'spring' }}
       whileHover={{ scale: 1.05, rotate: 0, zIndex: 50 }}
@@ -422,131 +491,4 @@ const PolaroidCard: React.FC<{ item: DBItem; index: number }> = ({ item, index }
       </div>
     </motion.div>
   );
-}
-
-function AdminView({ config, backgrounds, polaroids, handleSaveConfig, handleUploadBg, handleUploadPolaroid, handleUploadEnvelope, deleteItem, handleUpdatePolaroidText, onClose }: any) {
-  return (
-    <div className="min-h-screen w-full bg-pink-50 p-4 sm:p-12 font-sans overflow-y-auto">
-      <div className="max-w-3xl mx-auto bg-white p-6 sm:p-8 rounded-3xl shadow-xl border-4 border-pink-100">
-        <div className="flex justify-between items-center mb-8 border-b-2 border-pink-50 pb-4">
-          <h2 className="text-2xl sm:text-3xl font-black text-pink-600">Configuración</h2>
-          <button onClick={onClose} className="text-pink-400 hover:text-pink-600 font-bold underline bg-pink-50 px-4 py-2 rounded-full">
-            Ver Tarjeta
-          </button>
-        </div>
-        
-        <section className="mb-10 bg-pink-50/50 p-6 rounded-2xl border border-pink-100">
-          <h3 className="text-xl font-bold text-pink-600 mb-4">Textos Principales</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-bold text-pink-500 mb-2">Título (Ej: ¡FELIZ CUMPLE!)</label>
-              <input type="text" value={config.title} onChange={(e) => handleSaveConfig({title: e.target.value})} className="w-full p-3 border-2 border-pink-200 rounded-xl focus:outline-none focus:border-pink-400 font-medium text-pink-700" />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-pink-500 mb-2">Nombre</label>
-              <input type="text" value={config.name} onChange={(e) => handleSaveConfig({name: e.target.value})} className="w-full p-3 border-2 border-pink-200 rounded-xl focus:outline-none focus:border-pink-400 font-medium text-pink-700" />
-            </div>
-          </div>
-        </section>
-
-        <section className="mb-10 bg-pink-50/50 p-6 rounded-2xl border border-pink-100">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl font-bold text-pink-600">Fondos (Pre-carga 5 clicks)</h3>
-            <label className="cursor-pointer bg-pink-500 hover:bg-pink-600 text-white text-sm font-bold py-2 px-4 rounded-full transition-colors flex items-center gap-2">
-              <Plus size={16}/> Añadir
-              <input type="file" multiple accept="image/*" className="hidden" onChange={handleUploadBg} />
-            </label>
-          </div>
-          <p className="text-sm text-pink-400 mb-4">Sube las imágenes sin importar el nombre. Se mostrarán aleatoriamente o en orden.</p>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-            {backgrounds.map((bg: any) => (
-              <div key={bg.id} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden border-2 border-pink-200 group shadow-sm">
-                <img src={bg.base64Data} className="w-full h-full object-cover" />
-                <button onClick={() => deleteItem('backgrounds', bg.id)} className="absolute top-1 right-1 p-1.5 bg-red-500 text-white rounded-full opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            ))}
-            {backgrounds.length === 0 && <p className="text-sm text-pink-400 col-span-5 italic">No hay fondos subidos.</p>}
-          </div>
-        </section>
-
-        <section className="mb-10 bg-pink-50/50 p-6 rounded-2xl border border-pink-100">
-          <div className="flex items-center gap-4 mb-6">
-            <h3 className="text-xl font-bold text-pink-600">Sección: Sobre Sorpresa</h3>
-            <label className="flex items-center gap-2 cursor-pointer text-pink-500 font-bold bg-white px-3 py-1.5 rounded-full border border-pink-200">
-              <input type="checkbox" checked={config.envelopeEnabled} onChange={(e) => handleSaveConfig({envelopeEnabled: e.target.checked})} className="w-4 h-4 accent-pink-500" />
-              Activar
-            </label>
-          </div>
-          {config.envelopeEnabled && (
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-bold text-pink-500 mb-2">Mensaje del sobre</label>
-                <textarea rows={4} value={config.envelopeText} onChange={(e) => handleSaveConfig({envelopeText: e.target.value})} className="w-full p-3 border-2 border-pink-200 rounded-xl focus:outline-none focus:border-pink-400 font-medium text-pink-700" />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-pink-500 mb-2">Fotografía interior</label>
-                <div className="flex flex-col sm:flex-row gap-4 items-start">
-                  {config.envelopePhoto && (
-                    <div className="w-full sm:w-32 aspect-square rounded-xl overflow-hidden border-2 border-pink-200 shadow-sm relative group">
-                      <img src={config.envelopePhoto} className="w-full h-full object-cover" />
-                    </div>
-                  )}
-                  <label className="cursor-pointer bg-white border-2 border-dashed border-pink-300 hover:bg-pink-50 text-pink-500 font-bold py-2 px-4 rounded-xl transition-colors h-32 flex items-center justify-center flex-1 w-full sm:w-auto">
-                    <div className="flex flex-col items-center gap-2">
-                      <Upload size={24} />
-                      <span>Cambiar Fotografía</span>
-                    </div>
-                    <input type="file" accept="image/*" className="hidden" onChange={handleUploadEnvelope} />
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
-
-        <section className="mb-4 bg-pink-50/50 p-6 rounded-2xl border border-pink-100">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
-            <div className="flex items-center gap-4">
-              <h3 className="text-xl font-bold text-pink-600">Sección: Álbum Polaroids</h3>
-              <label className="flex items-center gap-2 cursor-pointer text-pink-500 font-bold bg-white px-3 py-1.5 rounded-full border border-pink-200">
-                <input type="checkbox" checked={config.polaroidEnabled} onChange={(e) => handleSaveConfig({polaroidEnabled: e.target.checked})} className="w-4 h-4 accent-pink-500" />
-                Activar
-              </label>
-            </div>
-            {config.polaroidEnabled && (
-              <label className="cursor-pointer bg-pink-500 hover:bg-pink-600 text-white text-sm font-bold py-2 px-4 rounded-full transition-colors flex items-center justify-center gap-2">
-                <Plus size={16}/> Subir Fotos
-                <input type="file" multiple accept="image/*" className="hidden" onChange={handleUploadPolaroid} />
-              </label>
-            )}
-          </div>
-          {config.polaroidEnabled && (
-             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
-             {polaroids.map((pol: any) => (
-               <div key={pol.id} className="relative bg-white p-2 pb-3 shadow-md border border-gray-100 rounded-sm group flex flex-col gap-2">
-                 <div className="relative">
-                   <img src={pol.base64Data} className="w-full aspect-square object-cover bg-gray-100" />
-                   <button onClick={() => deleteItem('polaroids', pol.id)} className="absolute top-1 right-1 p-1.5 bg-red-500 text-white rounded-full opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity shadow-sm">
-                     <Trash2 size={14} />
-                   </button>
-                 </div>
-                 <input 
-                   type="text" 
-                   placeholder="Añadir texto..." 
-                   defaultValue={pol.text || ''} 
-                   onBlur={(e) => handleUpdatePolaroidText(pol.id, e.target.value)}
-                   className="w-full text-sm p-1 text-center text-pink-700 bg-transparent border-b border-transparent focus:border-pink-300 focus:outline-none placeholder-pink-200"
-                 />
-               </div>
-             ))}
-             {polaroids.length === 0 && <p className="text-sm text-pink-400 col-span-4 italic">No hay fotos subidas. Añade algunas para que aparezcan al final.</p>}
-           </div>
-          )}
-        </section>
-
-      </div>
-    </div>
-  );
-}
+};
